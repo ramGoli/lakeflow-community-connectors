@@ -20,14 +20,14 @@ def test_redshift_quick_validation():
     
     # Simple single-table config for quick validation
     quick_table_config = {
-        "public.users": {
+        "users": {
             "limit": "100"
         }
     }
 
     print(f"\n{'='*60}")
     print(f"Quick Validation Test - Redshift Connector")
-    print(f"Testing table: public.users with limit=100")
+    print(f"Testing table: users with limit=100")
     print(f"{'='*60}")
     
     # Create tester with the simple config
