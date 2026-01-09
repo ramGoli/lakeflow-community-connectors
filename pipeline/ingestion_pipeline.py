@@ -49,7 +49,8 @@ def _create_cdc_table(
 
     # Delete flow - only enabled for cdc_with_deletes ingestion type
     if config.with_deletes:
-        delete_view_name = config.source_table + "_delete_staging"
+        # Sanitize table name for view name (replace dots with underscores)
+        delete_view_name = config.source_table.replace(".", "_") + "_delete_staging"
 
         @sdp.view(name=delete_view_name)
         def delete_view():
@@ -74,25 +75,56 @@ def _create_cdc_table(
 
 
 def _create_snapshot_table(spark, connection_name: str, config: SdpTableConfig) -> None:
-    """Create snapshot table using batch read and apply_changes_from_snapshot"""
+    """Create snapshot table using streaming read with apply_changes
+    
+    Note: Snapshot ingestion requires primary keys to perform upserts.
+    If your table doesn't have primary keys defined in the source, you must
+    specify them explicitly in your pipeline spec using the 'primary_keys' field.
+    
+    For Redshift snapshot ingestion, we use streaming reads (not batch) to avoid
+    pickling issues with the boto3 client. The stream will read the entire table once.
+    """
+    
+    # Validate that primary keys are provided
+    if not config.primary_keys or len(config.primary_keys) == 0:
+        raise ValueError(
+            f"Snapshot ingestion for table '{config.source_table}' requires primary keys. "
+            f"Either define primary keys in the source table or specify them in the pipeline spec "
+            f"using 'table_configuration.primary_keys'. "
+            f"Example: {{'table_configuration': {{'primary_keys': ['id']}}}} "
+            f"If you don't need upsert logic, consider using ingestion_type='append' instead."
+        )
 
+    # Use streaming read for snapshot ingestion to avoid serialization issues
+    # The stream will read all data once from the beginning
     @sdp.view(name=config.view_name)
-    def snapshot_view():
+    def snapshot_source():
         return (
-            spark.read.format("lakeflow_connect")
+            spark.readStream.format("lakeflow_connect")
             .option("databricks.connection", connection_name)
             .option("tableName", config.source_table)
             .options(**config.table_config)
             .load()
         )
 
+    # Create the destination streaming table and apply changes
+    # For snapshot ingestion, we use apply_changes (not apply_changes_from_snapshot)
+    # with streaming source
     sdp.create_streaming_table(name=config.destination_table)
-    sdp.apply_changes_from_snapshot(
-        target=config.destination_table,
-        source=config.view_name,
-        keys=config.primary_keys,
-        stored_as_scd_type=config.scd_type,
-    )
+    
+    # Build apply_changes parameters
+    apply_changes_params = {
+        "target": config.destination_table,
+        "source": config.view_name,
+        "keys": config.primary_keys,
+        "stored_as_scd_type": config.scd_type,
+    }
+    
+    # Only add sequence_by if it's provided (not needed for snapshot ingestion)
+    if config.sequence_by:
+        apply_changes_params["sequence_by"] = col(config.sequence_by)
+    
+    sdp.apply_changes(**apply_changes_params)
 
 
 def _create_append_table(spark, connection_name: str, config: SdpTableConfig) -> None:
@@ -154,7 +186,8 @@ def ingest(spark, pipeline_spec: dict) -> None:
         primary_keys = metadata[table].get("primary_keys")
         cursor_field = metadata[table].get("cursor_field")
         ingestion_type = metadata[table].get("ingestion_type", "cdc")
-        view_name = table + "_staging"
+        # Sanitize table name for view name (replace dots with underscores)
+        view_name = table.replace(".", "_") + "_staging"
         table_config = spec.get_table_configuration(table)
         destination_table = spec.get_full_destination_table_name(table)
 
