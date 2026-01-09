@@ -427,17 +427,19 @@ class LakeflowConnect:
         Returns:
             StructType representing the table schema
         """
-        # Validate table exists
+        # Parse table name first to get fully-qualified name
+        schema_name, table = self._parse_table_name(table_name)
+        full_table_name = f"{schema_name}.{table}"
+        
+        # Validate table exists using fully-qualified name
         available_tables = self.list_tables()
-        if table_name not in available_tables:
+        if full_table_name not in available_tables:
             raise ValueError(
-                f"Table '{table_name}' is not supported. "
+                f"Table '{full_table_name}' is not supported. "
                 f"Available tables: {', '.join(available_tables[:10])}..."
                 if len(available_tables) > 10
                 else f"Available tables: {', '.join(available_tables)}"
             )
-        
-        schema_name, table = self._parse_table_name(table_name)
 
         sql = f"""
             SELECT 
@@ -497,17 +499,19 @@ class LakeflowConnect:
                 - primary_keys: List of primary key column names
                 - ingestion_type: "snapshot" (Redshift Data API does not support CDC)
         """
-        # Validate table exists
+        # Parse table name first to get fully-qualified name
+        schema_name, table = self._parse_table_name(table_name)
+        full_table_name = f"{schema_name}.{table}"
+        
+        # Validate table exists using fully-qualified name
         available_tables = self.list_tables()
-        if table_name not in available_tables:
+        if full_table_name not in available_tables:
             raise ValueError(
-                f"Table '{table_name}' is not supported. "
+                f"Table '{full_table_name}' is not supported. "
                 f"Available tables: {', '.join(available_tables[:10])}..."
                 if len(available_tables) > 10
                 else f"Available tables: {', '.join(available_tables)}"
             )
-        
-        schema_name, table = self._parse_table_name(table_name)
 
         # Query for primary key constraints
         sql = f"""
@@ -564,17 +568,19 @@ class LakeflowConnect:
         """
         from botocore.exceptions import ClientError  # Import here to avoid serialization issues
         
-        # Validate table exists
+        # Parse table name first to get fully-qualified name
+        schema_name, table = self._parse_table_name(table_name)
+        full_table_name = f"{schema_name}.{table}"
+        
+        # Validate table exists using fully-qualified name
         available_tables = self.list_tables()
-        if table_name not in available_tables:
+        if full_table_name not in available_tables:
             raise ValueError(
-                f"Table '{table_name}' is not supported. "
+                f"Table '{full_table_name}' is not supported. "
                 f"Available tables: {', '.join(available_tables[:10])}..."
                 if len(available_tables) > 10
                 else f"Available tables: {', '.join(available_tables)}"
             )
-        
-        schema_name, table = self._parse_table_name(table_name)
         full_table_name = f'"{schema_name}"."{table}"'
 
         # Build SQL query
